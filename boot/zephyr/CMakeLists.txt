@@ -140,6 +140,38 @@ if(DEFINED CONFIG_MEASURED_BOOT OR DEFINED CONFIG_BOOT_SHARE_DATA)
     )
 endif()
 
+# Generate VID value and raw value definition
+if(CONFIG_MCUBOOT_UUID_VID OR CONFIG_MCUBOOT_UUID_CID)
+  set(UUID_DNS_NAMESPACE 6ba7b810-9dad-11d1-80b4-00c04fd430c8)
+  string(
+      UUID UUID_VID
+      NAMESPACE ${UUID_DNS_NAMESPACE}
+      NAME ${CONFIG_MCUBOOT_UUID_VID_NAME}
+      TYPE SHA1 UPPER
+  )
+  string(REGEX REPLACE "([0-9A-F][0-9A-F])\-?" "0x\\1, " UUID_VID_RAW ${UUID_VID})
+  add_compile_definitions(MCUBOOT_UUIC_VID_VALUE=${UUID_VID_RAW})
+  zephyr_library_sources(
+    mcuboot_uuid.c
+    )
+endif()
+
+# Generate VID value(s) and raw value definition(s)
+if(CONFIG_MCUBOOT_UUID_CID)
+  foreach(image_id RANGE 4)
+    if(DEFINED CONFIG_MCUBOOT_UUID_CID_IMAGE_${image_id})
+      string(
+          UUID UUID_CID_IMAGE_${image_id}
+          NAMESPACE ${UUID_VID}
+          NAME ${CONFIG_MCUBOOT_UUID_CID_IMAGE_0}
+          TYPE SHA1 UPPER
+      )
+      string(REGEX REPLACE "([0-9A-F][0-9A-F])\-?" "0x\\1, " UUID_CID_IMAGE_${image_id}_RAW ${UUID_CID_IMAGE_${image_id}})
+      add_compile_definitions(MCUBOOT_UUIC_CID_IMAGE_${image_id}_VALUE=${UUID_CID_IMAGE_${image_id}_RAW})
+    endif()
+  endforeach()
+endif()
+
 # library which might be common source code for MCUBoot and an application
 zephyr_link_libraries(MCUBOOT_BOOTUTIL)
 

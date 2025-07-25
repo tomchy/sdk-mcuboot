@@ -44,6 +44,9 @@
 #include "bootutil/bootutil_log.h"
 
 BOOT_LOG_MODULE_DECLARE(mcuboot);
+#if defined(MCUBOOT_UUID_VID) || defined(MCUBOOT_UUID_VID)
+#include "bootutil/mcuboot_uuid.h"
+#endif /* MCUBOOT_UUID_VID || MCUBOOT_UUID_VID */
 
 #if defined(MCUBOOT_DECOMPRESS_IMAGES)
 #include <nrf_compress/implementation.h>
@@ -514,7 +517,7 @@ bootutil_img_validate(struct boot_loader_state *state,
 #endif
                      )
 {
-#if (defined(EXPECTED_KEY_TLV) && defined(MCUBOOT_HW_KEY)) || defined(MCUBOOT_HW_ROLLBACK_PROT) || defined(MCUBOOT_DECOMPRESS_IMAGES)
+#if (defined(EXPECTED_KEY_TLV) && defined(MCUBOOT_HW_KEY)) || defined(MCUBOOT_HW_ROLLBACK_PROT) || defined(MCUBOOT_DECOMPRESS_IMAGES) || defined(MCUBOOT_UUID_VID) || defined(MCUBOOT_UUID_CID)
     int image_index = (state == NULL ? 0 : BOOT_CURR_IMG(state));
 #endif
     uint32_t off;
@@ -553,6 +556,32 @@ bootutil_img_validate(struct boot_loader_state *state,
              image_index);
     if (FIH_NOT_EQ(security_counter_should_be_present, FIH_SUCCESS) &&
         FIH_NOT_EQ(security_counter_should_be_present, FIH_FAILURE)) {
+        rc = -1;
+        goto out;
+    }
+#endif
+#ifdef MCUBOOT_UUID_VID
+    struct image_uuid img_uuid_vid = {0x00};
+    const struct image_uuid *uuid_vid = NULL;
+    FIH_DECLARE(uuid_vid_valid, FIH_FAILURE);
+    FIH_DECLARE(uuid_vid_should_be_present, FIH_FAILURE);
+
+    FIH_CALL(boot_image_should_have_uuid_vid, uuid_vid_should_be_present, image_index);
+    if (FIH_NOT_EQ(uuid_vid_should_be_present, FIH_SUCCESS) &&
+        FIH_NOT_EQ(uuid_vid_should_be_present, FIH_FAILURE)) {
+        rc = -1;
+        goto out;
+    }
+#endif
+#ifdef MCUBOOT_UUID_CID
+    struct image_uuid img_uuid_cid = {0x00};
+    const struct image_uuid *uuid_cid = NULL;
+    FIH_DECLARE(uuid_cid_valid, FIH_FAILURE);
+    FIH_DECLARE(uuid_cid_should_be_present, FIH_FAILURE);
+
+    FIH_CALL(boot_image_should_have_uuid_cid, uuid_cid_should_be_present, image_index);
+    if (FIH_NOT_EQ(uuid_cid_should_be_present, FIH_SUCCESS) &&
+        FIH_NOT_EQ(uuid_cid_should_be_present, FIH_FAILURE)) {
         rc = -1;
         goto out;
     }
@@ -844,6 +873,92 @@ skip_security_counter_read:
             break;
         }
 #endif /* MCUBOOT_HW_ROLLBACK_PROT */
+
+
+#ifdef MCUBOOT_UUID_VID
+        case IMAGE_TLV_UUID_VID:
+        {
+            /*
+             * Verify the image's vendor ID length.
+             * This must always be present.
+             */
+            if (len != sizeof(img_uuid_vid)) {
+                /* Vendor ID UUID is not valid. */
+                rc = -1;
+                goto out;
+            }
+
+            rc = LOAD_IMAGE_DATA(hdr, fap, off, img_uuid_vid.raw, len);
+            if (rc) {
+                goto out;
+            }
+
+            if (FIH_EQ(uuid_vid_should_be_present, FIH_FAILURE)) {
+                goto skip_vid_read;
+            }
+
+            FIH_CALL(boot_uuid_cid_get, fih_rc, image_index, &uuid_vid);
+            if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
+                FIH_SET(fih_rc, FIH_FAILURE);
+                goto out;
+            }
+
+            /* Compare the image's vendor ID value against the expected value.
+             */
+            fih_rc = boot_uuid_compare(uuid_vid, &img_uuid_vid);
+            if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
+                FIH_SET(fih_rc, FIH_FAILURE);
+                goto out;
+            }
+
+            /* The image's security counter has been successfully verified. */
+            uuid_vid_valid = fih_rc;
+skip_vid_read:
+            break;
+        }
+#endif
+#ifdef MCUBOOT_UUID_CID
+        case IMAGE_TLV_UUID_CID:
+        {
+            /*
+             * Verify the image's class ID length.
+             * This must always be present.
+             */
+            if (len != sizeof(img_uuid_cid)) {
+                /* Class ID UUID is not valid. */
+                rc = -1;
+                goto out;
+            }
+
+            rc = LOAD_IMAGE_DATA(hdr, fap, off, img_uuid_cid.raw, len);
+            if (rc) {
+                goto out;
+            }
+
+            if (FIH_EQ(uuid_cid_should_be_present, FIH_FAILURE)) {
+                goto skip_cid_read;
+            }
+
+            FIH_CALL(boot_uuid_cid_get, fih_rc, image_index, &uuid_cid);
+            if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
+                FIH_SET(fih_rc, FIH_FAILURE);
+                goto out;
+            }
+
+            /* Compare the image's class ID value against the expected value.
+             */
+            fih_rc = boot_uuid_compare(uuid_cid, &img_uuid_cid);
+            if (FIH_NOT_EQ(fih_rc, FIH_SUCCESS)) {
+                FIH_SET(fih_rc, FIH_FAILURE);
+                goto out;
+            }
+
+            /* The image's security counter has been successfully verified. */
+            uuid_cid_valid = fih_rc;
+skip_cid_read:
+            break;
+        }
+#endif
         }
     }
 
@@ -870,6 +985,31 @@ skip_security_counter_read:
     }
 
 skip_security_counter_check:
+#endif
+
+#ifdef MCUBOOT_UUID_VID
+    if (FIH_EQ(uuid_vid_should_be_present, FIH_FAILURE)) {
+        goto skip_vid_check;
+    }
+
+    if (FIH_NOT_EQ(uuid_vid_valid, FIH_SUCCESS)) {
+        rc = -1;
+        goto out;
+    }
+
+skip_vid_check:
+#endif
+#ifdef MCUBOOT_UUID_CID
+    if (FIH_EQ(uuid_cid_should_be_present, FIH_FAILURE)) {
+        goto skip_cid_check;
+    }
+
+    if (FIH_NOT_EQ(uuid_cid_valid, FIH_SUCCESS)) {
+        rc = -1;
+        goto out;
+    }
+
+skip_cid_check:
 #endif
 
 #ifdef MCUBOOT_DECOMPRESS_IMAGES

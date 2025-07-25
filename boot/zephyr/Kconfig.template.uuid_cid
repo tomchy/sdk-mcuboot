@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config MCUBOOT_UUID_CID_IMAGE_$(image)
+	bool "Device class name (image $(image))"
+	depends on MCUBOOT_UUID_CID
+	help
+	  Enable evice class identifier for image $(image).
+
+config MCUBOOT_UUID_CID_IMAGE_$(image)_NAME
+	string "Device class name (image $(image))"
+	default ""
+	depends on MCUBOOT_UUID_CID_IMAGE_$(image)
+	help
+	  Device class identifier (usually product name) used for generating
+	  unique RFC4122 UUID5 identifier for image $(image).
+	  Device class UUID value is based on the vendor UUID, even if it is not
+	  included inside the image's TLV.
