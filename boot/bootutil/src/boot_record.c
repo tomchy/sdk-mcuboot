@@ -395,3 +395,33 @@ int boot_save_shared_data(const struct image_header *hdr, const struct flash_are
     return rc;
 }
 #endif /* MCUBOOT_DATA_SHARING_BOOTINFO */
+
+#ifdef MCUBOOT_HW_ROLLBACK_PROT
+typedef uint32_t counter_t;
+static counter_t curr_value = 3;
+
+fih_int boot_nv_security_counter_init(void)
+{
+	return FIH_SUCCESS;
+}
+
+fih_int boot_nv_security_counter_get(uint32_t image_id, fih_int *security_cnt)
+{
+	if (security_cnt == NULL) {
+		FIH_RET(FIH_FAILURE);
+	}
+
+	/* We support only one, common counter in MCUBOOT */
+	*security_cnt = fih_int_encode(curr_value);
+
+	FIH_RET(FIH_SUCCESS);
+}
+
+int32_t boot_nv_security_counter_update(uint32_t image_id, uint32_t img_security_cnt)
+{
+    if (curr_value < img_security_cnt) {
+        curr_value = img_security_cnt;
+    }
+	return 0;
+}
+#endif /* MCUBOOT_HW_ROLLBACK_PROT */
