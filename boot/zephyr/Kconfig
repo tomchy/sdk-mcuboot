@@ -1070,6 +1070,14 @@ config MCUBOOT_HW_DOWNGRADE_PREVENTION
 
 endchoice
 
+config MCUBOOT_HW_DOWNGRADE_PREVENTION_APP
+	bool "HW based downgrade prevention counter"
+	help
+	  Prevent undesirable/malicious software downgrades. When this option is
+	  set, any upgrade must have security counter value.
+	  The value is not compared, but the hardware counter is updated and
+	  exposed to the main application.
+
 config BOOT_WATCHDOG_FEED
 	bool "Feed the watchdog while doing swap"
 	default y if WATCHDOG

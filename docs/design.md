@@ -1388,6 +1388,18 @@ the `MCUBOOT_HW_ROLLBACK_PROT` config option. When enabled, the target must
 provide an implementation of the security counter interface defined in
 `boot/bootutil/include/security_cnt.h`.
 
+### [Hardware-based downgrade prevention counter](#hw-downgrade-prevention-counter)
+
+It is possible to keep the hardware prevention counter update logic, but skip the
+security counter value comparison with the `MCUBOOT_HW_ROLLBACK_PROT_APP` config
+option. In such case, the application is expected to use the
+`MCUBOOT_DATA_SHARING_BOOTINFO` config option to enable data sharing, read the
+current value of the security counter inside the initialization code and handle
+the invalid state of the device (i.e. by reducing it's functionality to DFU).
+
+This mode still requires to build the image with the `-s` option of the
+[imgtool](imgtool.md) script.
+
 ## [Measured boot and data sharing](#boot-data-sharing)
 
 MCUboot defines a mechanism for sharing boot status information (also known as
