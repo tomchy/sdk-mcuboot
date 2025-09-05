@@ -12,6 +12,19 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/storage/flash_map.h>
 
+#include "bootutil/fault_injection_hardening.h"
+
+#if DT_NODE_EXISTS(DT_NODELABEL(mcuboot_s2ram)) &&\
+	DT_NODE_HAS_COMPAT(DT_NODELABEL(mcuboot_s2ram), zephyr_memory_region)
+/* Linker section name is given by `zephyr,memory-region` property of
+ * `zephyr,memory-region` compatible DT node with nodelabel `mcuboot_s2ram`.
+ */
+__attribute__((section(DT_PROP(DT_NODELABEL(mcuboot_s2ram), zephyr_memory_region))))
+struct mcuboot_resume_s _mcuboot_resume;
+#else
+    #error  "mcuboot resume support section not defined in dts"
+#endif
+
 int soc_s2ram_suspend(pm_s2ram_system_off_fn_t system_off)
 {
 	(void)(system_off);
@@ -37,6 +50,15 @@ bool pm_s2ram_mark_check_and_clear(void)
 		return false;
 	}
 
+    /* S2RAM resume expected, do doublecheck */
+    if (_mcuboot_resume.magic == MCUBOOT_S2RAM_RESUME_MAGIC) {
+        // clear magic to avoid accidental reuse
+        _mcuboot_resume.magic = 0;
+    } else {
+        // magic not valid, normal boot
+        goto resume_failed;
+    }
+
 	// s2ram boot
     struct arm_vector_table *vt;
     vt = (struct arm_vector_table *)(FIXED_PARTITION_OFFSET(slot0_partition) + 0x800);
@@ -56,9 +78,8 @@ bool pm_s2ram_mark_check_and_clear(void)
         : "r0", "r1", "memory"
     );
 
-	while(1)
-	{
-	}
+resume_failed:
+    FIH_PANIC;
 
 	return true;
 }
