@@ -20,10 +20,16 @@
  * `zephyr,memory-region` compatible DT node with nodelabel `mcuboot_s2ram`.
  */
 __attribute__((section(DT_PROP(DT_NODELABEL(mcuboot_s2ram), zephyr_memory_region))))
-struct mcuboot_resume_s _mcuboot_resume;
+volatile struct mcuboot_resume_s _mcuboot_resume;
 #else
     #error  "mcuboot resume support section not defined in dts"
 #endif
+
+#define FIXED_PARTITION_ADDR(node_label)                                   \
+	(DT_REG_ADDR(DT_NODELABEL(node_label)) +                               \
+	 COND_CODE_0(DT_FIXED_PARTITION_EXISTS(DT_NODELABEL(node_label)), (0), \
+        (DT_REG_ADDR(DT_GPARENT(DT_NODELABEL(node_label))))))
+
 
 int soc_s2ram_suspend(pm_s2ram_system_off_fn_t system_off)
 {
@@ -61,7 +67,7 @@ bool pm_s2ram_mark_check_and_clear(void)
 
 	// s2ram boot
     struct arm_vector_table *vt;
-    vt = (struct arm_vector_table *)(FIXED_PARTITION_OFFSET(slot0_partition) + 0x800);
+    vt = (struct arm_vector_table *)(FIXED_PARTITION_ADDR(slot0_partition) + 0x800);
 
 	// Jump to application
     __asm__ volatile (
