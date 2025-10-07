@@ -409,6 +409,11 @@ boot_verify_slot_dependency(struct boot_loader_state *state,
     if (!state->slot_usage[dep->image_id].slot_available[dep_slot]) {
         return -1;
     }
+
+    /* Dependency slot is not active, so dependency cannot be satisfied in this iteration. */
+    if (dep_slot != state->slot_usage[dep->image_id].active_slot) {
+        return -1;
+    }
 #else
     dep_slot = state->slot_usage[dep->image_id].active_slot;
 #endif
@@ -440,33 +445,13 @@ boot_verify_slot_dependency(struct boot_loader_state *state,
         rc = 0;
     }
 #else
-  if (rc >= 0) {
+    if (rc >= 0) {
         /* Dependency satisfied. */
         rc = 0;
     }
 #endif
 
-#ifdef MCUBOOT_VERSION_CMP_USE_SLOT_NUMBER
-    if (rc == 0) {
-        switch(dep->slot) {
-            case VERSION_DEP_SLOT_PRIMARY:
-                state->slot_usage[dep->image_id].slot_available[BOOT_SLOT_PRIMARY] = true;
-                state->slot_usage[dep->image_id].slot_available[BOOT_SLOT_SECONDARY] = false;
-                state->slot_usage[dep->image_id].active_slot = BOOT_SLOT_PRIMARY;
-                break;
-            case VERSION_DEP_SLOT_SECONDARY:
-                state->slot_usage[dep->image_id].slot_available[BOOT_SLOT_PRIMARY] = false;
-                state->slot_usage[dep->image_id].slot_available[BOOT_SLOT_SECONDARY] = true;
-                state->slot_usage[dep->image_id].active_slot = BOOT_SLOT_SECONDARY;
-                break;
-            case VERSION_DEP_SLOT_ACTIVE:
-            default:
-                break;
-        }
-    }
-#endif /* MCUBOOT_VERSION_CMP_USE_SLOT_NUMBER */
-
-return rc;
+    return rc;
 }
 
 #if !defined(MCUBOOT_DIRECT_XIP) && !defined(MCUBOOT_RAM_LOAD)
@@ -515,6 +500,7 @@ boot_verify_dependencies(struct boot_loader_state *state)
 }
 #else
 
+#if !defined(MCUBOOT_VERSION_CMP_USE_SLOT_NUMBER) && !defined(MCUBOOT_FIND_NEXT_SLOT_HOOKS)
 /**
  * Checks the dependency of all the active slots. If an image found with
  * invalid or not satisfied dependencies the image is removed from SRAM (in
@@ -552,7 +538,114 @@ boot_verify_dependencies(struct boot_loader_state *state)
 
     return rc;
 }
-#endif
+#else /* defined(MCUBOOT_VERSION_CMP_USE_SLOT_NUMBER) || defined(MCUBOOT_FIND_NEXT_SLOT_HOOKS) */
+/**
+ * Checks the dependency of all the active slots. If an image found with
+ * invalid or not satisfied dependencies the image is removed from SRAM (in
+ * case of MCUBOOT_RAM_LOAD strategy) and its slot is set to unavailable.
+ *
+ * @param  state        Boot loader status information.
+ *
+ * @return              0 if dependencies are met; nonzero otherwise.
+ */
+static int
+boot_verify_dependencies(struct boot_loader_state *state)
+{
+    int rc = -1;
+    uint32_t active_slot = BOOT_SLOT_NONE;
+    uint32_t preferred_slot_mask = 0;
+    uint32_t solution;
+
+    /* Create a mask of preferred slots, so they will be checked first. */
+    IMAGES_ITER(BOOT_CURR_IMG(state)) {
+        if (state->img_mask[BOOT_CURR_IMG(state)]) {
+            continue;
+        }
+
+        active_slot = state->slot_usage[BOOT_CURR_IMG(state)].active_slot;
+        if (active_slot == BOOT_SLOT_SECONDARY) {
+            preferred_slot_mask |= (1 << (BOOT_IMAGE_NUMBER - 1 - BOOT_CURR_IMG(state)));
+        }
+    }
+
+    /* Try all possible combinations of active slots to find a solution
+     * that satisfies all dependencies.
+     */
+    for (solution = 0; solution < (1 << BOOT_IMAGE_NUMBER); solution++) {
+        uint32_t slot_mask = solution ^ preferred_slot_mask;
+        bool skip = false;
+
+        /* Set the active slots according to the current solution. */
+        IMAGES_ITER(BOOT_CURR_IMG(state)) {
+            if (state->img_mask[BOOT_CURR_IMG(state)]) {
+                continue;
+            }
+
+            if (slot_mask & (1 << (BOOT_IMAGE_NUMBER - 1 -BOOT_CURR_IMG(state)))) {
+                if (!state->slot_usage[BOOT_CURR_IMG(state)].slot_available[BOOT_SLOT_SECONDARY]) {
+                    skip = true;
+                    break;
+                }
+                state->slot_usage[BOOT_CURR_IMG(state)].active_slot = BOOT_SLOT_SECONDARY;
+                active_slot = BOOT_SLOT_SECONDARY;
+            } else {
+                if (!state->slot_usage[BOOT_CURR_IMG(state)].slot_available[BOOT_SLOT_PRIMARY]) {
+                    skip = true;
+                    break;
+                }
+                state->slot_usage[BOOT_CURR_IMG(state)].active_slot = BOOT_SLOT_PRIMARY;
+                active_slot = BOOT_SLOT_PRIMARY;
+            }
+            if (skip) {
+                break;
+            }
+        }
+
+        /* Skip if a solution is not valid. */
+        if (skip) {
+            continue;
+        }
+
+        IMAGES_ITER(BOOT_CURR_IMG(state)) {
+            if (state->img_mask[BOOT_CURR_IMG(state)]) {
+                continue;
+            }
+            /* Verify the dependencies of the current solution. */
+            active_slot = state->slot_usage[BOOT_CURR_IMG(state)].active_slot;
+            rc = boot_verify_slot_dependencies(state, active_slot);
+            if (rc != 0) {
+                /* Dependencies not met or invalid dependencies. */
+                skip = true;
+                break;
+            }
+        }
+        if (!skip) {
+            return rc;
+        }
+    }
+
+    /* Solution not found. Invalidate all slots to break from the main loop. */
+    IMAGES_ITER(BOOT_CURR_IMG(state)) {
+        if (state->img_mask[BOOT_CURR_IMG(state)]) {
+            continue;
+        }
+
+        for (active_slot = 0; active_slot < BOOT_NUM_SLOTS; active_slot++) {
+            if (state->slot_usage[BOOT_CURR_IMG(state)].slot_available[active_slot]) {
+#ifdef MCUBOOT_RAM_LOAD
+                boot_remove_image_from_sram(state);
+#endif /* MCUBOOT_RAM_LOAD */
+                state->slot_usage[BOOT_CURR_IMG(state)].slot_available[active_slot] = false;
+            }
+        }
+
+        state->slot_usage[BOOT_CURR_IMG(state)].active_slot = BOOT_SLOT_NONE;
+    }
+
+    return rc;
+}
+#endif /* defined(MCUBOOT_VERSION_CMP_USE_SLOT_NUMBER) || defined(MCUBOOT_FIND_NEXT_SLOT_HOOKS) */
+#endif /* !MCUBOOT_DIRECT_XIP && !MCUBOOT_RAM_LOAD */
 
 /**
  * Read all dependency TLVs of an image from the flash and verify
