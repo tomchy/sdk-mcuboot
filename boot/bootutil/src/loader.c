@@ -50,6 +50,8 @@
 #include "bootutil/boot_hooks.h"
 #include "bootutil/mcuboot_status.h"
 
+#ifndef MCUBOOT_MANIFEST_UPDATES
+
 #if defined(MCUBOOT_DECOMPRESS_IMAGES)
 #include <nrf_compress/implementation.h>
 #include <compression/decompression.h>
@@ -3616,3 +3618,5 @@ uint32_t boot_get_state_secondary_offset(struct boot_loader_state *state,
     return 0;
 }
 #endif
+
+#endif /* !MCUBOOT_MANIFEST_UPDATES */
