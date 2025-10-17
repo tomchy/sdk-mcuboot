@@ -32,6 +32,7 @@ target_sources(bootutil
         src/image_validate.c
         src/loader.c
         src/loader_manifest_xip_ram.c
+        src/loader_manifest_swap.c
         src/swap_misc.c
         src/swap_move.c
         src/swap_scratch.c
