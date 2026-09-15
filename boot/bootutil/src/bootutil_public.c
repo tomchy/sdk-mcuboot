@@ -505,6 +505,10 @@ boot_swap_type_multi(int image_index)
     int rc;
     size_t i;
 
+    if (image_index >= BOOT_IMAGE_NUMBER) {
+        return BOOT_SWAP_TYPE_PANIC;
+    }
+
     if (FLASH_AREA_IMAGE_PRIMARY(image_index) ==
         FLASH_AREA_IMAGE_SECONDARY(image_index)) {
         BOOT_LOG_INF("Image index: %d, aliased slots; Swap type: none", image_index);
